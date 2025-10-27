@@ -1,5 +1,4 @@
-# HRM-for-coherence
-Altering the default Hierarchical Reasoning Model (HRM) to apply for Coherence / QA Tasks.
+# 🧠 Extending the Hierarchical Reasoning Model with Attention Feedback for NLP
 
 # 📚 Overview
 
@@ -15,10 +14,10 @@ Matthieu Drouin: Data Specialist
 Conducted dataset curation and literature review on HRM and NLP datasets.
 
 Inés Alonso: Low-Level Module Researcher
-Led literature review and design for token-level (low) module.
+Led literature review and design for token-level module.
 
 Alec Brenes: High-Level Module Researcher	
-Focused on architecture and reasoning flow in the high-level (context) module.
+Focused on architecture and reasoning flow in the high-level module.
 
 
 # 🎯 Problem Statement
@@ -33,3 +32,25 @@ Our project aims to:
 -Introduce attention feedback between high-level and low-level modules.
 
 -Demonstrate hierarchical multi-hop reasoning without massive datasets.
+
+
+# 📊 Data Sets
+
+TBD
+
+# 📁 Project Structure
+
+TBD
+
+
+# 🧾 References
+
+Wang et al., Hierarchical Reasoning Model, (2025).
+
+Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, (2024).
+
+Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, (2022).
+
+Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
+
+Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, (2025).
