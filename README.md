@@ -46,8 +46,11 @@ TBD
 
 # 🧾 References
 
-Wang et al., Hierarchical Reasoning Model, arXiv:2506.21734 (2025).
-Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, arXiv:2406.09308 (2024).
-Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, arXiv:2201.11903 (2022).
+Wang et al., Hierarchical Reasoning Model, (2025).
+
+Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, (2024).
+
+Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, (2022).
+
 Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
-Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, arXiv:2501.00823 (2025).
+Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, (2025).
