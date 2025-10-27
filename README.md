@@ -53,4 +53,5 @@ Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, (2024).
 Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, (2022).
 
 Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
+
 Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, (2025).
