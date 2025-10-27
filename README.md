@@ -3,7 +3,7 @@ Altering the default Hierarchical Reasoning Model (HRM) to apply for Coherence /
 
 # 📚 Overview
 
-This project, developed by the NLP Foreigners team for CAI4304, explores how the Hierarchical Reasoning Model (HRM), a neuroscience-inspired architecture, can be adapted to Natural Language Processing (NLP) tasks such as question answering (QA) and coherence reasoning.
+This project, developed by the NLP Foreigners team for CAI4304, explores how the Hierarchical Reasoning Model (HRM). A neuroscience-inspired architecture, can be adapted to Natural Language Processing (NLP) tasks such as question answering (QA) and coherence reasoning.
 Our main goal is to extend the HRM architecture with an attention feedback mechanism to enable multi-hop reasoning and context refinement within a two-module framework.
 
 
@@ -15,10 +15,10 @@ Matthieu Drouin: Data Specialist
 Conducted dataset curation and literature review on HRM and NLP datasets.
 
 Inés Alonso: Low-Level Module Researcher
-Led literature review and design for token-level (low) module.
+Led literature review and design for token-level module.
 
 Alec Brenes: High-Level Module Researcher	
-Focused on architecture and reasoning flow in the high-level (context) module.
+Focused on architecture and reasoning flow in the high-level module.
 
 
 # 🎯 Problem Statement
@@ -33,3 +33,21 @@ Our project aims to:
 -Introduce attention feedback between high-level and low-level modules.
 
 -Demonstrate hierarchical multi-hop reasoning without massive datasets.
+
+
+# 📊 Data Sets
+
+TBD
+
+# 📁 Project Structure
+
+TBD
+
+
+# 🧾 References
+
+Wang et al., Hierarchical Reasoning Model, arXiv:2506.21734 (2025).
+Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, arXiv:2406.09308 (2024).
+Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, arXiv:2201.11903 (2022).
+Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
+Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, arXiv:2501.00823 (2025).
