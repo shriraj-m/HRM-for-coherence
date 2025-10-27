@@ -3,7 +3,7 @@ Altering the default Hierarchical Reasoning Model (HRM) to apply for Coherence /
 
 # 📚 Overview
 
-This project, developed by the NLP Foreigners team for CAI4304, explores how the Hierarchical Reasoning Model (HRM). A neuroscience-inspired architecture, can be adapted to Natural Language Processing (NLP) tasks such as question answering (QA) and coherence reasoning.
+This project, developed by the NLP Foreigners team for CAI4304, explores how the Hierarchical Reasoning Model (HRM), a neuroscience-inspired architecture, can be adapted to Natural Language Processing (NLP) tasks such as question answering (QA) and coherence reasoning.
 Our main goal is to extend the HRM architecture with an attention feedback mechanism to enable multi-hop reasoning and context refinement within a two-module framework.
 
 
