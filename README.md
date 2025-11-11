@@ -36,7 +36,12 @@ Our project aims to:
 
 # 📊 Data Sets
 
-TBD
+We will be using existing NLP datasets that are completely open-source. These datasets will focus on reasoning-heavy tasks and will be used to evaluate our model. The datasets that we aim to use are HotpotQA, SCAN, and CFQ. Here are the links, we will be using HuggingFace.
+
+HotpotQA: https://github.com/hotpotqa/hotpot
+SCAN: https://github.com/brendenlake/SCAN
+CFQ: https://github.com/google-research/google-research/tree/master/cfq
+
 
 # 📁 Project Structure
 
