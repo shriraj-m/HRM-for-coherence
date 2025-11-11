@@ -1,0 +1,44 @@
+# HotpotQA training configuration for HRM v2
+# Multi-hop question answering with hierarchical reasoning
+
+defaults:
+  - arch: hrm_v2
+  - _self_
+
+hydra:
+  output_subdir: null
+
+# Data path (not used - HotpotQA loads from HuggingFace)
+data_path: null
+
+# Training hyperparameters
+global_batch_size: 16  # Start small for testing, increase to 64-128 for full training
+epochs: 10  # Increase to 20-50 for full training
+eval_interval: 1  # Evaluate every epoch
+checkpoint_every_eval: true
+
+# Learning rate schedule
+lr: 3e-4  # Slightly lower than typical for stability
+lr_min_ratio: 0.1  # Decay to 10% of initial lr
+lr_warmup_steps: 100  # Warmup steps
+
+# Optimizer parameters (standard for Transformers)
+beta1: 0.9
+beta2: 0.95
+weight_decay: 0.1
+
+# Puzzle embedding parameters (not used for HotpotQA)
+puzzle_emb_lr: 1e-2
+puzzle_emb_weight_decay: 0.1
+
+# Logging and checkpointing
+project_name: "HRM-HotpotQA"
+run_name: null  # Auto-generated
+checkpoint_path: null  # Auto-generated
+
+# Random seed
+seed: 42
+
+# Evaluation outputs to save (optional)
+eval_save_outputs: []  # Add 'logits' or 'predictions' if needed
+
