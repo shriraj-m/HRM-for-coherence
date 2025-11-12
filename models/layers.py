@@ -1,14 +1,21 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 
+# Try to import FlashAttention, but provide fallback
+FLASH_ATTENTION_AVAILABLE = False
 try:
     from flash_attn_interface import flash_attn_func  # type: ignore[import]
+    FLASH_ATTENTION_AVAILABLE = True
 except ImportError:
-    # Fallback to FlashAttention 2
-    from flash_attn import flash_attn_func  # type: ignore[import]
+    try:
+        from flash_attn import flash_attn_func  # type: ignore[import]
+        FLASH_ATTENTION_AVAILABLE = True
+    except ImportError:
+        print("⚠️  FlashAttention not available, using PyTorch native attention (slower but works on CPU)")
+        flash_attn_func = None
 
 from models.common import trunc_normal_init_
 
@@ -109,30 +116,144 @@ class Attention(nn.Module):
         self.qkv_proj = CastedLinear(self.hidden_size, (self.num_heads + 2 * self.num_key_value_heads) * self.head_dim, bias=False)
         self.o_proj = CastedLinear(self.output_size, self.hidden_size, bias=False)
 
-    def forward(self, cos_sin: CosSin, hidden_states: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, _ = hidden_states.shape
-
-        # hidden_states: [bs, seq_len, num_heads, head_dim]
+    def forward(self, cos_sin: CosSin, hidden_states: torch.Tensor, key_value_states: torch.Tensor = None) -> torch.Tensor:
+        """
+        multi-head attention with optional cross-attention support.
+        
+        Args:
+            cos_sin: Tuple of (cos, sin) for RoPE positional encodings, or None
+            hidden_states: Query states [batch, seq_len_q, hidden_size]
+            key_value_states: Optional. If provided, performs cross-attention where:
+                            - Queries come from hidden_states
+                            - Keys/Values come from key_value_states
+                            Shape: [batch, seq_len_kv, hidden_size]
+                            If None, performs self-attention (default behavior)
+        
+        Returns:
+            Attention output [batch, seq_len_q, hidden_size]
+            
+        notes:
+        - self-attention: Q, K, V all from same sequence (hidden_states)
+        - cross-attention: Q from one sequence, K/V from another (key_value_states)
+        - this enables H <--> L communication in hierarchical reasoning
+        """
+        batch_size, seq_len_q, _ = hidden_states.shape
+        
+        # now compute queries from hidden_states 
+        # project to (num_heads * head_dim) for queries and then split it 
         qkv = self.qkv_proj(hidden_states)
+        qkv = qkv.view(batch_size, seq_len_q, self.num_heads + 2 * self.num_key_value_heads, self.head_dim)
+        query = qkv[:, :, :self.num_heads]  # [batch, seq_len_q, num_heads, head_dim]
+        
+        # now compute keys and values
+        if key_value_states is not None:
+            # cross-attention mode
+            # keys and values come from a different sequence (key_value_states)
+            seq_len_kv = key_value_states.shape[1]
+            
+            # project key_value_states to get K and V
+            kv = self.qkv_proj(key_value_states)
+            kv = kv.view(batch_size, seq_len_kv, self.num_heads + 2 * self.num_key_value_heads, self.head_dim)
+            
+            # extract key and value from the projection
+            # we only need K and V, not Q (Q comes from hidden_states)
+            key = kv[:, :, self.num_heads: self.num_heads + self.num_key_value_heads]
+            value = kv[:, :, self.num_heads + self.num_key_value_heads:]
+        else:
+            # self-attention mode (original behavior)
+            # keys and values come from the same sequence as queries
+            key = qkv[:, :, self.num_heads: self.num_heads + self.num_key_value_heads]
+            value = qkv[:, :, self.num_heads + self.num_key_value_heads:]
+            seq_len_kv = seq_len_q
 
-        # Split head
-        qkv = qkv.view(batch_size, seq_len, self.num_heads + 2 * self.num_key_value_heads, self.head_dim)
-        query = qkv[:, :, :self.num_heads]
-        key = qkv[:, :, self.num_heads: self.num_heads + self.num_key_value_heads]
-        value = qkv[:, :, self.num_heads + self.num_key_value_heads:]
-
-        # RoPE
+        # now apply RoPE (Rotary Position Embeddings)
         if cos_sin is not None:
             cos, sin = cos_sin
-            query, key = apply_rotary_pos_emb(query, key, cos, sin)
+            
+            # check if we can apply RoPE to both Q and K
+            # for cross-attention with different lengths, we might need different handling
+            if seq_len_q == seq_len_kv:
+                # same length: apply RoPE to both Q and K using same positions
+                query, key = apply_rotary_pos_emb(query, key, cos, sin)
+            else:
+                # different lengths (cross-attention between H and L)
+                # query gets its own positional encoding (from cos_sin)
+                cos_q = cos[:seq_len_q] if cos.shape[0] >= seq_len_q else cos
+                sin_q = sin[:seq_len_q] if sin.shape[0] >= seq_len_q else sin
+                query = (query * cos_q.unsqueeze(-2)) + (rotate_half(query) * sin_q.unsqueeze(-2))
+                
+                # for cross-attention, keys use their own positional encoding
+                # (passed via separate cos_sin in the cross-attention module)
+                # so we don't apply position here for keys in cross-attention
 
-        # flash attn
-        attn_output = flash_attn_func(q=query, k=key, v=value, causal=self.causal)
-        if isinstance(attn_output, tuple):  # fa2 and fa3 compatibility
-            attn_output = attn_output[0]
+        # now do attention (FlashAttention if available, otherwise PyTorch native)
+        if FLASH_ATTENTION_AVAILABLE and flash_attn_func is not None:
+            # efficient attention computation using FlashAttention
+            attn_output = flash_attn_func(q=query, k=key, v=value, causal=self.causal)
+            if isinstance(attn_output, tuple):  # fa2 and fa3 compatibility
+                attn_output = attn_output[0]
+        else:
+            # fallback to PyTorch native attention (works on CPU, slower)
+            attn_output = self._native_attention(query, key, value, causal=self.causal)
 
-        attn_output = attn_output.view(batch_size, seq_len, self.output_size)  # type: ignore
+        # now project back to hidden_size
+        # reshape from [batch, seq_len_q, num_heads, head_dim] to [batch, seq_len_q, hidden_size]
+        attn_output = attn_output.view(batch_size, seq_len_q, self.output_size)  # type: ignore
         return self.o_proj(attn_output)
+    
+    def _native_attention(
+        self, 
+        query: torch.Tensor,  # [batch, seq_len_q, num_heads, head_dim]
+        key: torch.Tensor,    # [batch, seq_len_kv, num_heads, head_dim]
+        value: torch.Tensor,  # [batch, seq_len_kv, num_heads, head_dim]
+        causal: bool = False
+    ) -> torch.Tensor:
+        """
+        fallback attention using PyTorch's built-in operations.
+        slower than FlashAttention but works on CPU and doesn't require compilation.
+        
+        implements: Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) V
+        """
+        batch_size, seq_len_q, num_heads, head_dim = query.shape
+        seq_len_kv = key.shape[1]
+        
+        # ensure all tensors have same dtype (fix for bfloat16 vs float32 mismatch)
+        # convert everything to query's dtype to maintain consistency
+        target_dtype = query.dtype
+        key = key.to(target_dtype)
+        value = value.to(target_dtype)
+        
+        # transpose to [batch, num_heads, seq_len, head_dim] for matmul
+        query = query.transpose(1, 2)  # [batch, num_heads, seq_len_q, head_dim]
+        key = key.transpose(1, 2)      # [batch, num_heads, seq_len_kv, head_dim]
+        value = value.transpose(1, 2)  # [batch, num_heads, seq_len_kv, head_dim]
+        
+        # compute attention scores: Q @ K^T / sqrt(d_k)
+        scale = torch.tensor(head_dim ** -0.5, dtype=target_dtype, device=query.device)
+        attn_scores = torch.matmul(query, key.transpose(-2, -1)) * scale
+        # shape: [batch, num_heads, seq_len_q, seq_len_kv]
+        
+        # apply causal mask if needed (for autoregressive models)
+        if causal:
+            # create causal mask: upper triangular matrix of -inf
+            causal_mask = torch.triu(
+                torch.full((seq_len_q, seq_len_kv), float('-inf'), device=query.device),
+                diagonal=1
+            )
+            attn_scores = attn_scores + causal_mask
+        
+        # apply softmax to get attention weights
+        attn_weights = F.softmax(attn_scores, dim=-1)
+        # shape: [batch, num_heads, seq_len_q, seq_len_kv]
+        
+        # apply attention weights to values: weights @ V
+        attn_output = torch.matmul(attn_weights, value)
+        # shape: [batch, num_heads, seq_len_q, head_dim]
+        
+        # transpose back to [batch, seq_len_q, num_heads, head_dim]
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        
+        return attn_output
 
 
 class SwiGLU(nn.Module):

@@ -8,6 +8,66 @@ from torch import nn
 IGNORE_LABEL_ID = -100
 
 
+def compute_qa_f1_em(predictions: torch.Tensor, labels: torch.Tensor, ignore_index: int = -100) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute F1 and Exact Match scores for extractive QA.
+    
+    For each example in the batch:
+    - F1: Token overlap between predicted and true answer spans
+    - EM: 1 if predicted span exactly matches true span, 0 otherwise
+    
+    Args:
+        predictions: [batch_size, seq_len] - Predicted token IDs (argmax of logits)
+        labels: [batch_size, seq_len] - True token IDs (with ignore_index for non-answer positions)
+        ignore_index: Label value to ignore (default: -100)
+    
+    Returns:
+        f1_scores: [batch_size] - F1 score for each example
+        em_scores: [batch_size] - Exact Match (0 or 1) for each example
+    """
+
+    batch_size = predictions.shape[0]
+    f1_scores = torch.zeros(batch_size, dtype=torch.float32, device=predictions.device)
+    em_scores = torch.zeros(batch_size, dtype=torch.float32, device=predictions.device)
+    
+    # for each example in the batch
+    for i in range(batch_size):
+        # extract answer span positions (aka where labels are valid)
+        answer_mask = labels[i] != ignore_index  # [seq_len]
+        
+        # skip examples with no answer 
+        if not answer_mask.any():
+            continue
+        
+        # get predicted and true tokens in the answer span positions
+        pred_tokens = predictions[i][answer_mask]
+        true_tokens = labels[i][answer_mask]       
+        
+        # exact match: all tokens must match exactly
+        em_scores[i] = (pred_tokens == true_tokens).all().float()
+        
+        # f1 score: token overlap (treating answer span as a bag of tokens)
+        num_same = (pred_tokens == true_tokens).sum().float()
+        
+        # precision and recall
+        num_pred = pred_tokens.numel()
+        num_true = true_tokens.numel()
+        
+        if num_pred == 0 or num_true == 0:
+            # if either is empty, f1 is 0 (unless both are empty, then it's 1)
+            f1_scores[i] = 1.0 if (num_pred == 0 and num_true == 0) else 0.0
+        else:
+            precision = num_same / num_pred
+            recall = num_same / num_true
+            
+            if precision + recall > 0:
+                f1_scores[i] = 2 * (precision * recall) / (precision + recall)
+            else:
+                f1_scores[i] = 0.0
+    
+    return f1_scores, em_scores
+
+
 def s(x, epsilon=1e-30):
     return torch.where(
         x<0,
@@ -63,16 +123,25 @@ class ACTLossHead(nn.Module):
             loss_counts = mask.sum(-1)
             loss_divisor = loss_counts.clamp_min(1).unsqueeze(-1)  # Avoid NaNs in division
 
-            is_correct = mask & (torch.argmax(outputs["logits"], dim=-1) == labels)
+            predictions = torch.argmax(outputs["logits"], dim=-1)
+            is_correct = mask & (predictions == labels)
             seq_is_correct = is_correct.sum(-1) == loss_counts
+            
+            # QA-specific metrics: F1 and Exact Match for answer spans
+            f1_scores, em_scores = compute_qa_f1_em(predictions, labels, ignore_index=IGNORE_LABEL_ID)
             
             # Metrics (halted)
             valid_metrics = new_carry.halted & (loss_counts > 0)
             metrics = {
                 "count": valid_metrics.sum(),
                 
+                # token-level accuracy (all positions)
                 "accuracy":       torch.where(valid_metrics, (is_correct.to(torch.float32) / loss_divisor).sum(-1), 0).sum(),
                 "exact_accuracy": (valid_metrics & seq_is_correct).sum(),
+                
+                # QA-specific metrics (answer span only)
+                "f1_score":       torch.where(valid_metrics, f1_scores, 0).sum(),
+                "exact_match":    torch.where(valid_metrics, em_scores, 0).sum(),
 
                 "q_halt_accuracy": (valid_metrics & ((outputs["q_halt_logits"] >= 0) == seq_is_correct)).sum(),
                 "steps":          torch.where(valid_metrics, new_carry.steps, 0).sum(),
