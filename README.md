@@ -48,18 +48,6 @@ CFQ: https://github.com/google-research/google-research/tree/master/cfq
 TBD
 
 
-# 🧾 References
-
-Wang et al., Hierarchical Reasoning Model, (2025).
-
-Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, (2024).
-
-Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, (2022).
-
-Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
-
-Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, (2025).
-
 # Changes
 We've made major modifications to the core architecture of the HRM. Here is a semi-detailed overview of these changes:
 
@@ -250,3 +238,18 @@ Sentence Pooling → [H-level: sentence reasoning]
 ### 5. **Hierarchical Output**
 - Token predictions from L (language modeling)
 - Reasoning decisions from H (halting/QA)
+- 
+
+
+
+# 🧾 References
+
+Wang et al., Hierarchical Reasoning Model, (2025).
+
+Bounsi et al., Transformers Meet Neural Algorithmic Reasoners, (2024).
+
+Wei & Tay et al., Chain-of-Thought Prompting Elicits Reasoning in LLMs, (2022).
+
+Gong & Bowman, Ruminating Reader: Reasoning with Gated Multi-Hop Attention, ACL (2018).
+
+Guo & Chen, Decoupling Knowledge and Reasoning in Transformers, (2025).
