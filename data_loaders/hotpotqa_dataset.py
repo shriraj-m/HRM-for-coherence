@@ -117,50 +117,76 @@ class HotpotQADataset(Dataset):
         self, 
         answer_text: str, 
         context_text: str, 
-        context_tokens: List[int]
+        input_ids: List[int]
     ) -> Tuple[int, int]:
         """
-        find the token span of the answer in the context.
-        uses simple string matching to locate answer position.
+        Find the token span of the answer in the input sequence.
+        Uses improved matching with multiple strategies.
         
         Args:
             answer_text: the answer string (e.g., "yes" or "James Cameron")
             context_text: the full context string
-            context_tokens: tokenized context (token IDs)
+            input_ids: full tokenized input (includes [CLS] question [SEP] context)
         
         Returns:
             (start_pos, end_pos): token indices of answer span
                                  returns (-1, -1) if not found
         """
-        # find character-level position
-        answer_lower = answer_text.lower()
-        context_lower = context_text.lower()
-        
-        char_start = context_lower.find(answer_lower)
-        if char_start == -1:
-            # answer not found in context (happens sometimes in HotpotQA)
-            return -1, -1
-        
-        char_end = char_start + len(answer_text)
-        
-        # convert character positions to token positions
-        # this is approximate but works for most cases
-        # get text before answer
-        prefix = context_text[:char_start]
-        prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
-        
-        # get answer tokens
+        # Tokenize the answer to see what we're looking for
         answer_tokens = self.tokenizer.encode(answer_text, add_special_tokens=False)
         
-        # token positions (accounting for [CLS])
-        start_pos = len(prefix_tokens) + 1  # +1 for [CLS]
-        end_pos = start_pos + len(answer_tokens)
-        
-        # make sure positions are valid
-        if start_pos >= len(context_tokens) or end_pos > len(context_tokens):
+        if len(answer_tokens) == 0:
             return -1, -1
         
-        return start_pos, end_pos
+        # Strategy 1: Look for exact token sequence match in input_ids
+        # This is more reliable than character-level matching
+        for i in range(len(input_ids) - len(answer_tokens) + 1):
+            if input_ids[i:i+len(answer_tokens)] == answer_tokens:
+                return i, i + len(answer_tokens)
+        
+        # Strategy 2: Try case-insensitive character matching with better alignment
+        answer_lower = answer_text.lower().strip()
+        context_lower = context_text.lower().strip()
+        
+        # Find all occurrences (not just first)
+        char_start = context_lower.find(answer_lower)
+        
+        if char_start != -1:
+            # Found in text, now map to tokens more carefully
+            # Reconstruct the text from tokens to find alignment
+            try:
+                # Decode the context portion to find exact token positions
+                # Skip [CLS] token (position 0) and question tokens
+                question_end = input_ids.index(self.tokenizer.sep_token_id) + 1  # After first [SEP]
+                
+                # Try to find answer tokens starting from after question
+                for i in range(question_end, len(input_ids) - len(answer_tokens) + 1):
+                    # Decode this span and check if it matches answer
+                    span_tokens = input_ids[i:i+len(answer_tokens)]
+                    span_text = self.tokenizer.decode(span_tokens, skip_special_tokens=True)
+                    
+                    # Clean and compare
+                    span_clean = span_text.lower().strip()
+                    answer_clean = answer_text.lower().strip()
+                    
+                    if span_clean == answer_clean or answer_clean in span_clean:
+                        return i, i + len(answer_tokens)
+            except (ValueError, IndexError):
+                pass
+        
+        # Strategy 3: Fuzzy match - check if answer tokens appear consecutively
+        # This handles cases where tokenization differs slightly
+        for i in range(len(input_ids) - 1):
+            span_text = self.tokenizer.decode(input_ids[i:min(i+10, len(input_ids))], skip_special_tokens=True)
+            if answer_text.lower() in span_text.lower():
+                # Found it! Now find exact end
+                for end in range(i+1, min(i+15, len(input_ids))):
+                    decoded = self.tokenizer.decode(input_ids[i:end], skip_special_tokens=True)
+                    if answer_text.lower() in decoded.lower():
+                        return i, end
+        
+        # Answer not found in context
+        return -1, -1
     
     def _create_sentence_masks(
         self,
@@ -303,29 +329,38 @@ class HotpotQADataset(Dataset):
         # reconstruct context text for answer finding
         context_text = " ".join(all_sentence_texts)
         
-        # find answer span in tokens
+        # find answer span in tokens using improved matching
         answer_start, answer_end = self._find_answer_span(answer, context_text, input_ids)
         
         # create label tensor
         labels = torch.full((self.max_seq_len,), IGNORE_LABEL, dtype=torch.long)
         
-        if answer_start != -1 and answer_end != -1:
-            # mark answer tokens
-            # for extractive QA we match input tokens at answer span
+        # Validate answer quality before setting labels
+        answer_clean = answer.strip()
+        valid_short_answers = ['yes', 'no', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+        is_valid_answer = (
+            len(answer_clean) >= 2 or  # At least 2 characters
+            answer_clean.lower() in valid_short_answers  # Or valid single-char answer
+        )
+        
+        if answer_start != -1 and answer_end != -1 and is_valid_answer:
+            # Found answer in context - mark those tokens as labels
             for i in range(answer_start, min(answer_end, self.max_seq_len)):
                 if i < len(input_ids):
                     labels[i] = input_ids[i]
-        else:
-            # if answer not found we'll predict the answer text at the end
+        elif is_valid_answer:
+            # Answer not found in context but is valid - append it
+            # This is the fallback for answers that aren't extractable
             answer_tokens = self.tokenizer.encode(answer, add_special_tokens=False)
-            # put answer at the end of the sequence
-            ans_start = len(input_ids)
-            for i, token in enumerate(answer_tokens):
-                if ans_start + i < self.max_seq_len:
-                    labels[ans_start + i] = token
-                    if ans_start + i >= len(input_ids):
-                        # extend input_ids if answer goes beyond
-                        input_ids.append(token)
+            if len(answer_tokens) > 0:  # Make sure we got valid tokens
+                ans_start = len(input_ids)
+                for i, token in enumerate(answer_tokens):
+                    if ans_start + i < self.max_seq_len:
+                        labels[ans_start + i] = token
+                        if ans_start + i >= len(input_ids):
+                            # extend input_ids if answer goes beyond
+                            input_ids.append(token)
+        # else: Invalid answer (empty or too short) - leave all labels as IGNORE_LABEL
         
         # now pad sequences
         # pad input_ids to max_seq_len

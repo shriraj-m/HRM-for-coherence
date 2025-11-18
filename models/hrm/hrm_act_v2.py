@@ -246,7 +246,8 @@ class HierarchicalReasoningModel_ACTV2_Inner(nn.Module):
         
         
         # changed initial states
-        self.H_init = nn.Buffer(
+        self.register_buffer(
+            "H_init",
             trunc_normal_init_(
                 torch.empty(self.config.max_sentences, self.config.hidden_size, dtype=self.forward_dtype), 
                 std=1
@@ -254,7 +255,8 @@ class HierarchicalReasoningModel_ACTV2_Inner(nn.Module):
             persistent=True
         )
         # L's initial state stays token-level
-        self.L_init = nn.Buffer(
+        self.register_buffer(
+            "L_init",
             trunc_normal_init_(
                 torch.empty(self.config.seq_len + self.puzzle_emb_len, self.config.hidden_size, dtype=self.forward_dtype), 
                 std=1
@@ -378,8 +380,8 @@ class HierarchicalReasoningModel_ACTV2_Inner(nn.Module):
 
     def empty_carry(self, batch_size: int):
         return HierarchicalReasoningModel_ACTV2InnerCarry(
-            z_H=torch.empty(batch_size, self.config.max_sentences, self.config.hidden_size, dtype=self.forward_dtype),
-            z_L=torch.empty(batch_size, self.config.seq_len + self.puzzle_emb_len, self.config.hidden_size, dtype=self.forward_dtype),
+            z_H=torch.empty(batch_size, self.config.max_sentences, self.config.hidden_size, dtype=self.forward_dtype, device=self.H_init.device),
+            z_L=torch.empty(batch_size, self.config.seq_len + self.puzzle_emb_len, self.config.hidden_size, dtype=self.forward_dtype, device=self.L_init.device),
         )
         
 
@@ -600,12 +602,13 @@ class HierarchicalReasoningModel_ACTV2(nn.Module):
 
     def initial_carry(self, batch: Dict[str, torch.Tensor]):
         batch_size = batch["inputs"].shape[0]
+        device = batch["inputs"].device
 
         return HierarchicalReasoningModel_ACTV2Carry(
             inner_carry=self.inner.empty_carry(batch_size),  # Empty is expected, it will be reseted in first pass as all sequences are halted.
             
-            steps=torch.zeros((batch_size, ), dtype=torch.int32),
-            halted=torch.ones((batch_size, ), dtype=torch.bool),  # Default to halted
+            steps=torch.zeros((batch_size, ), dtype=torch.int32, device=device),
+            halted=torch.ones((batch_size, ), dtype=torch.bool, device=device),  # Default to halted
             
             current_data={k: torch.empty_like(v) for k, v in batch.items()}
         )
